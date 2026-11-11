@@ -6,7 +6,7 @@ uniform sampler2D uBakeA;
 uniform sampler2D uBakeB;
 uniform sampler2D uSim;
 uniform sampler2D uLava;
-uniform vec2 uLavaRange; // x0, 1 / (x1 - x0)
+uniform vec3 uLavaRange; // x0, 1 / (x1 - x0), 1 / cells
 uniform float uLavaOn;
 uniform float uTime;
 uniform float uLevelY;
@@ -297,18 +297,33 @@ void main() {
   if (uLavaOn > 0.5) {
     float dAb = p.y - terrainH(p.x);
     if (dAb > -0.06 && dAb < 0.09) {
-      vec2 L = texture(uLava, vec2((p.x - uLavaRange.x) * uLavaRange.y, 0.5)).rg;
+      // sample a little wider than one cell so the sheet has no steps
+      float lu = (p.x - uLavaRange.x) * uLavaRange.y;
+      float cell = uLavaRange.z;
+      vec2 L = (texture(uLava, vec2(lu, 0.5)).rg * 2.0 + texture(uLava, vec2(lu - cell, 0.5)).rg + texture(uLava, vec2(lu + cell, 0.5)).rg + 0.5 * texture(uLava, vec2(lu - 2.0 * cell, 0.5)).rg + 0.5 * texture(uLava, vec2(lu + 2.0 * cell, 0.5)).rg) / 5.0;
       if (L.r > 0.002) {
-        float thick = min(L.r, 1.6) * 0.021 * (0.85 + 0.3 * snoise(vec2(p.x * 55.0, uTime * 0.3)));
+        float heat = L.g;
+        // lobes and swells fixed to the ground, so cooled lava holds still
+        float lobes = 0.80 + 0.30 * snoise(vec2(p.x * 21.0, 4.0)) + 0.12 * snoise(vec2(p.x * 67.0, 9.0));
+        // nothing lies across the open crater
+        float onGround = smoothstep(0.0, 0.010, abs(p.x) - conduitW(RIM_Y + 0.03));
+        float thick = min(L.r, 1.5) * 0.019 * lobes * smoothstep(0.0, 0.10, L.r) * onGround;
         float inL = smoothstep(px, -px, dAb - thick) * smoothstep(-0.0045 - px, -0.0045 + px, dAb);
         float sgn = p.x > 0.0 ? 1.0 : -1.0;
-        float n = fbm(vec2(p.x * 75.0 - sgn * uTime * 0.35 * L.g, dAb * 150.0), 3);
-        float temp = L.g * (0.80 + 0.55 * n);
-        temp *= mix(1.0, 0.50, smoothstep(0.35, 1.0, dAb / max(thick, 1e-4)));
-        vec3 lc = blackbody(temp) + vec3(0.014, 0.011, 0.011);
+        // the texture creeps downhill only while the lava is still molten
+        float creep = uTime * 0.30 * smoothstep(0.25, 0.8, heat);
+        float n = fbm(vec2(p.x * 75.0 - sgn * creep, dAb * 150.0), 3);
+        float seams = pow(ridged(vec2(p.x * 130.0 - sgn * creep * 0.5, dAb * 240.0) + 0.3 * n, 2), 5.0);
+        // a dark skin forms as it cools, glowing only along the seams
+        float crust = 1.0 - smoothstep(0.34, 0.80, heat + 0.22 * n);
+        crust = max(crust, smoothstep(0.45, 1.0, dAb / max(thick, 1e-4)) * (1.0 - smoothstep(0.75, 1.0, heat)));
+        float temp = heat * (0.80 + 0.55 * n);
+        temp = mix(temp, heat * (0.10 + 1.45 * seams), crust);
+        vec3 basalt = vec3(0.020, 0.018, 0.019) * (0.75 + 0.6 * n);
+        vec3 lc = blackbody(temp) + basalt;
         col = mix(col, lc, inL);
-        float halo = L.g * L.g * min(L.r * 3.0, 1.0) * exp(-abs(dAb - thick * 0.5) / 0.020);
-        col += GLOW * halo * 0.30 * (1.0 - inL);
+        float halo = onGround * heat * heat * heat * min(L.r * 3.0, 1.0) * exp(-abs(dAb - thick * 0.5) / 0.018);
+        col += GLOW * halo * 0.22 * (1.0 - inL);
       }
     }
   }

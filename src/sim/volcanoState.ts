@@ -72,8 +72,12 @@ export class Volcano {
     let target = Math.pow(heat, 0.9);
     if (this.erupting) target = 1.06;
     else if (this.cooling > 0 || this.rest > 0) target = Math.min(target, 0.62);
-    const k = this.erupting ? 14 : 6;
-    const c = this.erupting ? 5.5 : 3.4;
+    // the vent stays full while the fountain is still playing, then the column drains
+    if (!this.erupting && this.erupt > 0.02) target = Math.max(target, Math.min(1, 0.5 + 0.9 * this.erupt));
+    // magma is driven up quickly but drains back slowly
+    const sinking = !this.erupting && target < this.level;
+    const k = this.erupting ? 14 : sinking ? 1.6 : 6;
+    const c = this.erupting ? 5.5 : sinking ? 2.6 : 3.4;
     const acc = k * (target - this.level) - c * this.levelVel;
     this.levelVel += acc * dt;
     this.level += this.levelVel * dt;
@@ -89,6 +93,8 @@ export class Volcano {
     // ---- phase label ----------------------------------------------------------------
     if (this.erupting) this.phase = 'erupting';
     else if (this.erupt > 0.05 || this.cooling > 0) this.phase = 'cooling';
+    // still draining after an eruption: the column is higher than the heat alone would hold it
+    else if (this.rest > 0 && this.level - Math.pow(heat, 0.9) > 0.1) this.phase = 'cooling';
     else if (this.level >= 0.76) this.phase = 'critical';
     else if (this.level >= 0.42) this.phase = 'rising';
     else if (this.level >= 0.08) this.phase = 'stirring';

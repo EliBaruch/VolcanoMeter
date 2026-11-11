@@ -108,6 +108,12 @@ export class VolcanoSound {
   private hidden = false;
 
   private master!: GainNode;
+  private flutter!: GainNode;
+  private flutterLow = false;
+  private flutterClock = 0;
+  private tap: AnalyserNode | null = null;
+  private tapData: Float32Array<ArrayBuffer> = new Float32Array(0);
+  private readonly tapRef = { db: new Float32Array(0) as Float32Array, sampleRate: 48000 };
   private bus!: GainNode; // layers that get reverb
   private wet!: GainNode;
   private brown!: AudioBuffer;
@@ -234,7 +240,32 @@ export class VolcanoSound {
     limiter.ratio.value = 14;
     limiter.attack.value = 0.003;
     limiter.release.value = 0.25;
-    this.master.connect(limiter).connect(ctx.destination);
+    // A faint, irregular flutter in loudness, like the unsteady breath of a vent.
+    // It also makes the output's moment-to-moment pattern more distinctive, which
+    // the microphone side uses to tell the app's own sound from people talking
+    // (see echo.ts).
+    this.flutter = ctx.createGain();
+    this.master.connect(limiter).connect(this.flutter).connect(ctx.destination);
+    if (this.external) {
+      const total = (ctx as OfflineAudioContext).length / ctx.sampleRate;
+      let low = false;
+      for (let t = 0; t < total; t += 0.12 + Math.random() * 0.28) {
+        this.flutter.gain.setTargetAtTime(low ? 0.8 : 1, t, 0.02);
+        low = !low;
+      }
+    }
+
+    // exactly what reaches the speakers, so the microphone side can subtract it
+    const tap = ctx.createAnalyser();
+    tap.fftSize = 2048;
+    tap.smoothingTimeConstant = 0.3;
+    tap.minDecibels = -110;
+    tap.maxDecibels = -10;
+    this.flutter.connect(tap);
+    this.tap = tap;
+    this.tapData = new Float32Array(tap.frequencyBinCount);
+    this.tapRef.db = this.tapData;
+    this.tapRef.sampleRate = ctx.sampleRate;
 
     // reverb send for everything except the deepest layers
     this.bus = ctx.createGain();
@@ -345,6 +376,13 @@ export class VolcanoSound {
     this.loop(this.white, 0.6, 1.4).connect(this.windBp).connect(this.windGain).connect(this.bus);
   }
 
+  /** Spectrum of what is being played right now, or null if nothing is. */
+  reference(): { db: Float32Array; sampleRate: number } | null {
+    if (!this.tap || !this.ctx || this.ctx.state !== 'running') return null;
+    this.tap.getFloatFrequencyData(this.tapData);
+    return this.tapRef;
+  }
+
   // ---------------------------------------------------------------------------
   /** Follow the volcano. Call once per frame (or once, before an offline render). */
   update(s: SoundState, dt: number): void {
@@ -358,6 +396,15 @@ export class VolcanoSound {
       if (instant) p.setValueAtTime(v, t);
       else p.setTargetAtTime(v, t, tau);
     };
+
+    if (!instant) {
+      this.flutterClock -= dt;
+      if (this.flutterClock <= 0) {
+        this.flutterLow = !this.flutterLow;
+        this.flutterClock = 0.12 + Math.random() * 0.28;
+        this.flutter.gain.setTargetAtTime(this.flutterLow ? 0.8 : 1, t, 0.02);
+      }
+    }
 
     // a slow random drift keeps the continuous layers from sounding static
     this.wanderClock -= dt;

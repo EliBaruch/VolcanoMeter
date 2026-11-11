@@ -260,9 +260,11 @@ export class Effects {
     // ---- particles ---------------------------------------------------------------------------------------------
     const lp = this.opts.lowPower;
     particles.limit = lp ? 1100 : particles.capacity;
-    if (s.erupt > 0.02) {
-      this.sparkDebt += dt * s.erupt * (lp ? 300 : 820);
-      this.bombDebt += dt * s.erupt * (lp ? 16 : 42);
+    // the fountain needs magma at the vent: no sparks from an empty crater
+    const fed = smoothstep(0.86, 0.98, v.level);
+    if (s.erupt * fed > 0.02) {
+      this.sparkDebt += dt * s.erupt * fed * (lp ? 300 : 820);
+      this.bombDebt += dt * s.erupt * fed * (lp ? 16 : 42);
       const fh = s.fountH;
       while (this.sparkDebt >= 1) {
         this.sparkDebt -= 1;

@@ -1,4 +1,11 @@
+import { EchoCanceller } from './echo';
 import { extractFeatures, type AudioFeatures } from './heat';
+
+/** What the app itself is playing right now. */
+export interface Reference {
+  db: Float32Array;
+  sampleRate: number;
+}
 
 /**
  * Always-on microphone. Audio never leaves this object: each frame is reduced
@@ -11,10 +18,16 @@ export class Mic {
   private time: Float32Array<ArrayBuffer> = new Float32Array(0);
   private freq: Float32Array<ArrayBuffer> = new Float32Array(0);
   private restarting = false;
+  private canceller = new EchoCanceller();
   private echo = false;
   onLost: (() => void) | null = null;
   /** called whenever the stream has been (re)opened */
   onOpen: (() => void) | null = null;
+
+  /** For diagnostics: how sure the canceller is that it hears the app, and how much it removed. */
+  get echoState(): { follows: number; removed: number; lag: number } {
+    return { follows: this.canceller.follows, removed: this.canceller.echoShare, lag: this.canceller.lag };
+  }
 
   get running(): boolean {
     return !!this.analyser && this.ctx?.state === 'running';
@@ -90,11 +103,17 @@ export class Mic {
     }
   }
 
-  read(): AudioFeatures | null {
+  /**
+   * @param ref spectrum of the app's own output at this moment (null when silent);
+   *            it is subtracted so the volcano does not react to itself
+   * @param dt  seconds since the previous read
+   */
+  read(ref: Reference | null, dt: number): AudioFeatures | null {
     if (!this.analyser || !this.ctx || this.ctx.state !== 'running') return null;
     this.analyser.getFloatTimeDomainData(this.time);
     this.analyser.getFloatFrequencyData(this.freq);
-    return extractFeatures(this.time, this.freq, this.ctx.sampleRate);
+    this.canceller.process(this.freq, this.ctx.sampleRate, ref ? ref.db : null, ref ? ref.sampleRate : 0, dt);
+    return extractFeatures(this.time, this.freq, this.ctx.sampleRate, this.canceller.binGain);
   }
 
   stop(): void {

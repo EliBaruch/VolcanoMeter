@@ -22,6 +22,9 @@ export class LavaFlow implements LavaSource {
   private slope = new Float32Array(this.cells);
   private srcL: number;
   private srcR: number;
+  /** cells over the open crater: there is no ground there for lava to lie on */
+  private craterL: number;
+  private craterR: number;
   private dx: number;
 
   constructor() {
@@ -38,6 +41,8 @@ export class LavaFlow implements LavaSource {
     }
     this.srcL = this.cellAt(-RIM_HALF_WIDTH - 0.014);
     this.srcR = this.cellAt(RIM_HALF_WIDTH + 0.014);
+    this.craterL = this.cellAt(-RIM_HALF_WIDTH - 0.005);
+    this.craterR = this.cellAt(RIM_HALF_WIDTH + 0.005);
     // make sure the sources drain outward, not back into the crater
     this.downhill[this.srcL] = this.srcL - 1;
     this.downhill[this.srcR] = this.srcR + 1;
@@ -53,10 +58,17 @@ export class LavaFlow implements LavaSource {
 
   /** A clot landed on the slope and stays there glowing. */
   addSpatter(x: number, size: number): void {
-    const i = this.cellAt(x);
-    const o = i * 2;
-    this.data[o] = Math.min(1.2, this.data[o] + 0.05 + size * 9);
-    this.data[o + 1] = Math.max(this.data[o + 1], 0.85);
+    // a small glowing patch spread over neighbouring cells, never a spike
+    const c = this.cellAt(x);
+    const add = 0.03 + size * 6;
+    for (let k = -1; k <= 1; k++) {
+      const i = c + k;
+      if (i < 0 || i >= this.cells) continue;
+      const o = i * 2;
+      const w = k === 0 ? 1 : 0.55;
+      if (this.data[o] < 0.3) this.data[o] = Math.min(0.3, this.data[o] + add * w);
+      this.data[o + 1] = Math.max(this.data[o + 1], 0.8 * w);
+    }
     this.active = true;
   }
 
@@ -102,15 +114,35 @@ export class LavaFlow implements LavaSource {
         }
       }
     }
+    // molten lava levels itself out, so the sheet stays smooth instead of stepping cell to cell
+    const d = Math.min(0.24, 14 * dt);
+    for (let i = 0; i < this.cells - 1; i++) {
+      const o = i * 2;
+      const p = o + 2;
+      const a0 = b[o];
+      const a1 = b[p];
+      const from = a0 > a1 ? o : p;
+      const to = a0 > a1 ? p : o;
+      if (b[from] < 0.1 || b[from + 1] < 0.14) continue;
+      const move = Math.abs(a0 - a1) * d * smoothstep(0.14, 0.4, b[from + 1]);
+      const had = b[to];
+      b[to + 1] = (b[to + 1] * had + b[from + 1] * move) / (had + move || 1);
+      b[from] -= move;
+      b[to] = had + move;
+    }
+
+    // while the vent feeds it, lava stays insulated; once the supply stops it skins over quickly
+    const fed = left > 0.001 || right > 0.001;
+    const chill = fed ? 0.03 : 0.075;
     for (let i = 0; i < this.cells; i++) {
       const o = i * 2;
       let amt = b[o];
       let heat = b[o + 1];
       if (amt > 0) {
-        heat -= dt * (0.032 + 0.012 / (amt + 0.15));
+        heat -= dt * (chill + 0.014 / (amt + 0.15));
         if (heat < 0) heat = 0;
         // frozen rock weathers away so the cone returns to rest
-        if (heat < 0.06) amt -= dt * 0.03;
+        if (heat < 0.05) amt -= dt * (0.05 + 0.25 * amt);
         if (amt < 0.001) {
           amt = 0;
           heat = 0;
@@ -121,6 +153,11 @@ export class LavaFlow implements LavaSource {
       a[o] = amt;
       a[o + 1] = heat;
       total += amt;
+    }
+    for (let i = this.craterL + 1; i < this.craterR; i++) {
+      total -= a[i * 2];
+      a[i * 2] = 0;
+      a[i * 2 + 1] = 0;
     }
     if (total < 0.002 && left <= 0.001 && right <= 0.001) {
       a.fill(0);

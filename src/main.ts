@@ -207,7 +207,7 @@ function boot(): void {
     if (mode === 'mic') {
       audioClock += dt;
       if (audioClock >= 1 / 30) {
-        const f = mic.read();
+        const f = mic.read(sound.reference(), audioClock);
         if (f) {
           heatModel.update(f, audioClock);
           audioLevel = smoothstep(8, 42, heatModel.aboveDb);
@@ -250,9 +250,9 @@ function boot(): void {
       manualHeat = Math.min(1, Math.max(0, v));
       hud.setManual(manualHeat);
     },
-    async probeSound(heat: number, level: number, erupt: number, seconds?: number, micGain?: number, small?: boolean) {
+    async probeSound(heat: number, level: number, erupt: number, opts?: Record<string, unknown>) {
       const m = await import('./audio/soundProbe');
-      return m.probeSound({ heat, level, erupt, wind: 0.4 }, seconds, true, micGain, small);
+      return m.probeSound({ heat, level, erupt, wind: 0.4 }, opts);
     },
     get state() {
       return {
@@ -261,6 +261,7 @@ function boot(): void {
         drive: heatModel.drive,
         aboveDb: heatModel.aboveDb,
         floorDb: heatModel.floorDb,
+        echo: mic.echoState,
         level: volcano.level,
         phase: volcano.phase,
         erupt: volcano.erupt,
@@ -268,6 +269,7 @@ function boot(): void {
         plume: effects.state.plume,
         plumeH: effects.state.plumeH,
         scale: renderer.scale,
+        simTime: effects.state.time,
         sound: sound.running,
         frames,
       };

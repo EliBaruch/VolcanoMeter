@@ -3,6 +3,7 @@
 // spectrum, no clipping)? And if the microphone heard the speakers with no echo
 // cancellation at all, would the volcano heat itself up?
 
+import { EchoCanceller } from './echo';
 import { extractFeatures, HeatModel } from './heat';
 import { VolcanoSound, type SoundState } from './sound';
 
@@ -17,6 +18,27 @@ export interface ProbeResult {
   selfHeat: number;
   selfDrive: number;
   activeShare: number;
+  /** share of the microphone signal the canceller removed while the app was playing */
+  removed: number;
+  /** delay the canceller settled on, in frames */
+  lag: number;
+  /** heat just before the app started making sound (from the calm talk alone) */
+  before: number;
+}
+
+export interface ProbeOptions {
+  seconds?: number;
+  /** how loudly the microphone hears the speakers (1 = as loud as they play) */
+  micGain?: number;
+  /** model a phone speaker that cannot reproduce bass */
+  smallSpeaker?: boolean;
+  /** subtract the app's own sound, as the app does */
+  cancel?: boolean;
+  sensitivity?: number;
+  /** people start shouting halfway through the app's own sound */
+  shout?: boolean;
+  /** filled with one line per second of what the heat model saw */
+  trace?: string[];
 }
 
 const SR = 48000;
@@ -40,39 +62,31 @@ async function render(state: SoundState, seconds: number, events: boolean): Prom
 }
 
 /** A calm talking voice, so the heat model has learned what normal speech is before the test. */
-function calmVoice(seconds: number, amp: number): AudioBuffer {
+function voice(seconds: number, amp: number, f0base = 125, tilt = 1.7, gap = 0.38): AudioBuffer {
   const n = Math.floor(seconds * SR);
   const buf = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: SR });
   const d = buf.getChannelData(0);
   for (let i = 0; i < n; i++) {
     const t = i / SR;
     const syl = (t * 3.3) % 1;
-    const env = syl < 0.38 ? 0 : Math.pow(Math.sin((Math.PI * (syl - 0.38)) / 0.62), 0.6);
-    const f0 = 125 * (1 + 0.06 * Math.sin(t * 5.1));
+    const env = syl < gap ? 0 : Math.pow(Math.sin((Math.PI * (syl - gap)) / (1 - gap)), 0.6);
+    const f0 = f0base * (1 + 0.06 * Math.sin(t * 5.1));
     let s = 0;
     for (let k = 1; k < 26; k++) {
       const fk = f0 * k;
       const formant =
         1 + 2.2 * Math.exp(-(((fk - 700) / 350) ** 2)) + 1.6 * Math.exp(-(((fk - 1900) / 500) ** 2));
-      s += (formant / Math.pow(k, 1.7)) * Math.sin(2 * Math.PI * fk * t + k);
+      if (fk > 5200) break;
+      s += (formant / Math.pow(k, tilt)) * Math.sin(2 * Math.PI * fk * t + k);
     }
     d[i] = s * amp * env + (Math.random() - 0.5) * 0.0012;
   }
   return buf;
 }
 
-/**
- * @param micGain      how loudly the microphone hears the speakers (1 = as loud as they play)
- * @param smallSpeaker true to model a phone speaker that cannot reproduce bass
- */
-export async function probeSound(
-  state: SoundState,
-  seconds = 12,
-  events = true,
-  micGain = 1.5,
-  smallSpeaker = false,
-): Promise<ProbeResult> {
-  const out = await render(state, seconds, events);
+export async function probeSound(state: SoundState, opts: ProbeOptions = {}): Promise<ProbeResult> {
+  const seconds = opts.seconds ?? 14;
+  const out = await render(state, seconds, true);
   const n = out.length;
   const l = out.getChannelData(0);
   const r = out.getChannelData(1);
@@ -85,17 +99,22 @@ export async function probeSound(
   }
   const rms = Math.sqrt(sum / n);
 
-  // ---- feedback test, through the same analyser and heat model the microphone uses ----
+  // ---- feedback test, through the same analysers, canceller and heat model the app uses ----
   const quiet = 6;
-  const talk = 14;
+  const talk = 26;
   const total = quiet + talk + seconds;
   const ctx = new OfflineAudioContext(1, Math.floor(total * SR), SR);
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 2048;
-  analyser.smoothingTimeConstant = 0.3;
-  analyser.minDecibels = -110;
-  analyser.maxDecibels = -10;
-  analyser.connect(ctx.destination);
+  const makeAnalyser = (): AnalyserNode => {
+    const a = ctx.createAnalyser();
+    a.fftSize = 2048;
+    a.smoothingTimeConstant = 0.3;
+    a.minDecibels = -110;
+    a.maxDecibels = -10;
+    return a;
+  };
+  const micAn = makeAnalyser();
+  const refAn = makeAnalyser();
+  micAn.connect(ctx.destination);
 
   const hiss = new AudioBuffer({ length: SR, numberOfChannels: 1, sampleRate: SR });
   const hd = hiss.getChannelData(0);
@@ -103,54 +122,89 @@ export async function probeSound(
   const room = ctx.createBufferSource();
   room.buffer = hiss;
   room.loop = true;
-  room.connect(analyser);
+  room.connect(micAn);
   room.start();
 
-  const voice = ctx.createBufferSource();
-  voice.buffer = calmVoice(talk, 0.008);
-  voice.connect(analyser);
-  voice.start(quiet);
+  const calm = ctx.createBufferSource();
+  calm.buffer = voice(talk, 0.008);
+  calm.connect(micAn);
+  calm.start(quiet);
 
-  // the speakers, heard by the microphone with no echo cancellation at all
+  if (opts.shout) {
+    const sh = ctx.createBufferSource();
+    sh.buffer = voice(seconds / 2, 0.11, 235, 0.85, 0.12);
+    sh.connect(micAn);
+    sh.start(quiet + talk + seconds / 2);
+  }
+
+  // what the app plays, and what the microphone hears of it: quieter or louder,
+  // late, smeared by the room, and without bass on a small speaker
   const own = ctx.createBufferSource();
   own.buffer = out;
+  own.connect(refAn);
   const g = ctx.createGain();
-  g.gain.value = micGain;
-  if (smallSpeaker) {
-    const hp1 = ctx.createBiquadFilter();
-    hp1.type = 'highpass';
-    hp1.frequency.value = 380;
-    const hp2 = ctx.createBiquadFilter();
-    hp2.type = 'highpass';
-    hp2.frequency.value = 380;
-    own.connect(hp1).connect(hp2).connect(g).connect(analyser);
-  } else {
-    own.connect(g).connect(analyser);
+  g.gain.value = opts.micGain ?? 1.5;
+  const delay = ctx.createDelay(1);
+  delay.delayTime.value = 0.17;
+  const echo = ctx.createDelay(1);
+  echo.delayTime.value = 0.06;
+  const echoGain = ctx.createGain();
+  echoGain.gain.value = 0.35;
+  let node: AudioNode = own;
+  if (opts.smallSpeaker) {
+    for (let k = 0; k < 2; k++) {
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 380;
+      node.connect(hp);
+      node = hp;
+    }
   }
+  node.connect(delay);
+  delay.connect(g);
+  delay.connect(echo).connect(echoGain).connect(g);
+  g.connect(micAn);
   own.start(quiet + talk);
 
   const model = new HeatModel();
-  const time = new Float32Array(analyser.fftSize);
-  const freq = new Float32Array(analyser.frequencyBinCount);
+  model.sensitivity = opts.sensitivity ?? 0.5;
+  const canceller = new EchoCanceller();
+  canceller.diagnose = !!opts.trace;
+  const time = new Float32Array(micAn.fftSize);
+  const freq = new Float32Array(micAn.frequencyBinCount);
+  const refFreq = new Float32Array(refAn.frequencyBinCount);
   const step = 1 / 30;
+  const from = quiet + talk + (opts.shout ? seconds / 2 : 0);
   let selfHeat = 0;
+  let before = 0;
   let selfDrive = 0;
   let active = 0;
   let frames = 0;
+  let removed = 0;
   let low = 0;
   let speech = 0;
   let high = 0;
   const binHz = SR / 2 / freq.length;
   for (let t = step; t < total - step; t += step) {
     void ctx.suspend(t).then(() => {
-      analyser.getFloatTimeDomainData(time);
-      analyser.getFloatFrequencyData(freq);
-      const f = extractFeatures(time, freq, SR);
+      micAn.getFloatTimeDomainData(time);
+      micAn.getFloatFrequencyData(freq);
+      refAn.getFloatFrequencyData(refFreq);
+      const playing = t > quiet + talk;
+      if (opts.cancel) canceller.process(freq, SR, playing ? refFreq : null, SR, step);
+      const f = extractFeatures(time, freq, SR, opts.cancel ? canceller.binGain : undefined);
       model.update(f, step);
-      if (t > quiet + talk + 0.5) {
+      if (opts.trace && Math.abs((t % 1) - 0.5) < step / 2) {
+        opts.trace.push(
+          `t ${t.toFixed(0).padStart(3)} lvl ${f.levelDb.toFixed(0)} above ${model.aboveDb.toFixed(0)} ratio ${f.speechRatio.toFixed(2)} tilt ${f.tiltDb.toFixed(0)} removed ${canceller.echoShare.toFixed(2)} follows ${canceller.follows.toFixed(2)} lag ${canceller.lag} jumps ${canceller.jumps}\n      mic ${canceller.micFollows}\n      drive ${model.drive.toFixed(2)} heat ${model.heat.toFixed(2)}`,
+        );
+      }
+      if (t < quiet + talk) before = model.heat;
+      if (t > from + 0.3) {
         selfHeat = Math.max(selfHeat, model.heat);
         selfDrive = Math.max(selfDrive, model.drive);
         frames++;
+        removed += canceller.echoShare;
         if (f.speechRatio > 0.32 && model.aboveDb > 9) active++;
         for (let i = 1; i < freq.length; i++) {
           const hz = i * binHz;
@@ -174,5 +228,9 @@ export async function probeSound(
     selfHeat,
     selfDrive,
     activeShare: frames ? active / frames : 0,
-  };
+    removed: frames ? removed / frames : 0,
+    lag: canceller.lag,
+    before,
+    trace: opts.trace,
+  } as ProbeResult;
 }

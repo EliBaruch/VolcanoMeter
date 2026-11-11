@@ -4,9 +4,9 @@ import { mixFor, type Mix } from '../src/audio/mix';
 const loudness = (m: Mix): number => m.rumble + m.sub + m.churn + m.hiss + m.roar + m.crackle + m.wind;
 
 describe('mixFor', () => {
-  it('is close to silent at rest', () => {
+  it('is silent at rest', () => {
     const m = mixFor(0, 0, 0);
-    expect(loudness(m)).toBeLessThan(0.06);
+    expect(loudness(m)).toBe(0);
     expect(m.roar).toBe(0);
     expect(m.sub).toBe(0);
   });
@@ -31,8 +31,8 @@ describe('mixFor', () => {
     expect(mixFor(0.9, 0.95, 0).hiss).toBeGreaterThan(0.02);
   });
 
-  it('keeps the wind for calm moments', () => {
-    expect(mixFor(0, 0, 0).wind).toBeGreaterThan(mixFor(1, 1, 0).wind);
+  it('keeps the wind for the quieter moments', () => {
+    expect(mixFor(0.25, 0.25, 0).wind).toBeGreaterThan(mixFor(1, 1, 0).wind);
     expect(mixFor(1, 1, 1).wind).toBe(0);
   });
 

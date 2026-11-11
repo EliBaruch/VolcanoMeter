@@ -41,14 +41,15 @@ export function mixFor(heat: number, level: number, erupt: number): Mix {
   level = clamp01(Number.isFinite(level) ? level : 0);
   erupt = clamp01(Number.isFinite(erupt) ? erupt : 0);
   return {
-    rumble: clamp01(0.012 + 0.42 * Math.pow(heat, 1.7) + 0.75 * erupt),
+    rumble: clamp01(0.42 * Math.pow(heat, 1.7) + 0.75 * erupt),
     rumbleCut: 55 + 55 * heat + 95 * erupt,
     sub: clamp01(0.22 * smoothstep(0.3, 1, heat) + 0.45 * erupt),
-    churn: clamp01((0.012 + 0.15 * Math.pow(heat, 1.3)) * (0.35 + 0.65 * smoothstep(0, 0.5, level)) * (1 - 0.4 * erupt)),
+    churn: clamp01(0.15 * Math.pow(heat, 1.3) * (0.35 + 0.65 * smoothstep(0, 0.5, level)) * (1 - 0.4 * erupt)),
     hiss: clamp01(0.07 * smoothstep(0.55, 1, level) * (0.35 + 0.65 * heat) * (1 - erupt) + 0.10 * erupt),
     roar: clamp01(0.8 * Math.pow(erupt, 1.3)),
     roarCut: 260 + 1500 * erupt,
     crackle: clamp01(0.05 * smoothstep(0.7, 1, heat) * (1 - erupt) + 0.5 * erupt),
-    wind: 0.016 * (1 - 0.6 * heat) * (1 - erupt),
+    // a breath of wind once the volcano stirs; a sleeping volcano is silent
+    wind: 0.014 * smoothstep(0.02, 0.2, heat) * (1 - 0.6 * heat) * (1 - erupt),
   };
 }

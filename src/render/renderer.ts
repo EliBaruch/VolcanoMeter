@@ -470,7 +470,7 @@ export class Renderer {
         1 / (this.height * this.upp),
       );
       gl.uniform2f(this.loc(p, 'uBakeTexel'), 1.25 / this.width, 1.25 / this.height);
-      gl.uniform2f(this.loc(p, 'uLavaRange'), lava.x0, 1 / (lava.x1 - lava.x0));
+      gl.uniform3f(this.loc(p, 'uLavaRange'), lava.x0, 1 / (lava.x1 - lava.x0), 1 / lava.cells);
       gl.uniform1f(this.loc(p, 'uLavaOn'), lava.active && this.lavaCells > 0 ? 1 : 0);
       gl.uniform1f(this.loc(p, 'uTime'), s.time);
       gl.uniform1f(this.loc(p, 'uLevelY'), s.levelY);

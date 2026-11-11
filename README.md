@@ -54,11 +54,15 @@ The volcano's sound is generated live with Web Audio (`src/audio/sound.ts`); the
 
 The speaker button in the top bar mutes it, and the volume slider is in settings. Browsers only allow sound after a tap, so it starts with the first button press.
 
-Because the app listens while it plays, three things stop the volcano reacting to itself:
+Because the app listens while it plays, it has to avoid reacting to itself. It does this by knowing exactly what it is playing (`src/audio/echo.ts`):
 
-- The microphone runs the browser's echo cancellation while sound is on (automatic gain stays off).
-- Everything that plays before an eruption sits below the speech band, which the heat model ignores.
-- An eruption has a fixed maximum length, so even on a device with no echo cancellation the roar cannot keep it going forever.
+- The output is tapped just before the speakers. A rumble or a roar is never steady: its loudness in each frequency band jitters from moment to moment in a pattern unique to it.
+- For each band, the canceller checks whether the microphone's jitter follows the output's jitter a moment later. Only the app's own sound can do that; people talking cannot. It insists on a clear match at one fixed delay before it believes it.
+- Where the microphone does follow, the ratio of the two levels is how loudly the microphone hears the speakers, and that predicted share is subtracted before the "is someone shouting?" logic runs.
+- One-off sounds (a bubble, a thud, thunder, the blast) are too short to learn from, so the app simply does not listen in that band for the moment it plays one.
+- Only the fastest jitter is compared. The volcano gets louder when people do, which is its job, and that slow link must not be mistaken for echo.
+
+The browser's own echo cancellation is switched on as well, and an eruption has a fixed maximum length as a last resort.
 
 ## How it is drawn
 

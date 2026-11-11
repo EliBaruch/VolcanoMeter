@@ -8,6 +8,8 @@ export interface AudioFeatures {
   speechRatio: number;
   /** energy at 1-4 kHz relative to 200-1000 Hz, dB. Raised voices tilt upward. */
   tiltDb: number;
+  /** share of the raw signal that was the app's own sound and has been removed, 0..1 */
+  echo?: number;
 }
 
 const SEGMENT_SECONDS = 2.5;
@@ -105,8 +107,11 @@ export class HeatModel {
     // ---- room baseline: the quiet moments of the last 30 s --------------------
     // A low percentile rather than the minimum, so a few frames of digital
     // silence or a dropout cannot drag the baseline down.
-    this.hist[Math.round(level + 100)]++;
-    this.histCount++;
+    // frames that were mostly our own sound say nothing about how quiet the room is
+    if ((f.echo ?? 0) < 0.5) {
+      this.hist[Math.round(level + 100)]++;
+      this.histCount++;
+    }
     if (this.histCount < 8 && this.segMin.length === 0) return this.heat;
     const low = this.lowLevel();
     if (!this.floorReady) {
@@ -117,8 +122,10 @@ export class HeatModel {
     let floorTarget = this.histCount >= 8 ? low : 0;
     for (const m of this.segMin) floorTarget = Math.min(floorTarget, m);
     if (this.segTime >= SEGMENT_SECONDS) {
-      this.segMin.push(low);
-      if (this.segMin.length > SEGMENTS) this.segMin.shift();
+      if (this.histCount >= 8) {
+        this.segMin.push(low);
+        if (this.segMin.length > SEGMENTS) this.segMin.shift();
+      }
       this.hist.fill(0);
       this.histCount = 0;
       this.segTime = 0;
@@ -128,7 +135,7 @@ export class HeatModel {
     const fk = floorTarget < this.floorDb ? 1 - Math.exp(-dt / 0.15) : 1 - Math.exp(-dt / 4);
     this.floorDb += (floorTarget - this.floorDb) * fk;
 
-    const above = level - this.floorDb;
+    const above = Math.max(0, level - this.floorDb);
     this.aboveDb = above;
     const active = above > 9 && f.speechRatio > 0.32;
 
@@ -184,10 +191,16 @@ export class HeatModel {
 
 /**
  * Reduce one analyser frame to features.
- * @param time   time-domain samples in [-1, 1]
- * @param freqDb magnitude spectrum in dB (AnalyserNode.getFloatFrequencyData)
+ * @param time    time-domain samples in [-1, 1]
+ * @param freqDb  magnitude spectrum in dB (AnalyserNode.getFloatFrequencyData)
+ * @param binGain optional per-bin power gain from the echo canceller (1 = keep, 0 = all echo)
  */
-export function extractFeatures(time: Float32Array, freqDb: Float32Array, sampleRate: number): AudioFeatures {
+export function extractFeatures(
+  time: Float32Array,
+  freqDb: Float32Array,
+  sampleRate: number,
+  binGain?: Float32Array,
+): AudioFeatures {
   let sum = 0;
   let mean = 0;
   for (let i = 0; i < time.length; i++) mean += time[i];
@@ -197,19 +210,23 @@ export function extractFeatures(time: Float32Array, freqDb: Float32Array, sample
     sum += v * v;
   }
   const rms = Math.sqrt(sum / (time.length || 1));
-  const levelDb = 20 * Math.log10(rms + 1e-9);
+  let levelDb = 20 * Math.log10(rms + 1e-9);
 
   const binHz = sampleRate / 2 / freqDb.length;
   let low = 0;
   let high = 0;
   let speech = 0;
   let total = 0;
+  let raw = 0;
+  const useGain = !!binGain && binGain.length === freqDb.length;
   const last = Math.min(freqDb.length - 1, Math.floor(8000 / binHz));
   for (let i = Math.max(1, Math.floor(60 / binHz)); i <= last; i++) {
     const hz = i * binHz;
     const db = freqDb[i];
     if (!(db > -200)) continue;
-    const p = Math.pow(10, db / 10);
+    let p = Math.pow(10, db / 10);
+    raw += p;
+    if (useGain) p *= binGain![i];
     total += p;
     if (hz >= 300 && hz <= 3400) speech += p;
     if (hz >= 200 && hz < 1000) low += p;
@@ -217,5 +234,11 @@ export function extractFeatures(time: Float32Array, freqDb: Float32Array, sample
   }
   const speechRatio = total > 0 ? speech / total : 0;
   const tiltDb = low > 0 && high > 0 ? 10 * Math.log10(high / low) : -20;
-  return { levelDb, speechRatio, tiltDb: clamp(tiltDb, -40, 20) };
+  // the level is measured on the whole signal; scale it down by what was removed as echo
+  let echo = 0;
+  if (useGain && raw > 0) {
+    echo = 1 - total / raw;
+    levelDb += 10 * Math.log10(Math.max(total / raw, 1e-9));
+  }
+  return { levelDb, speechRatio, tiltDb: clamp(tiltDb, -40, 20), echo };
 }
