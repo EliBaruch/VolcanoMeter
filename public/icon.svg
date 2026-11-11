@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#070a1c"/>
+      <stop offset="0.7" stop-color="#2a1b3a"/>
+      <stop offset="1" stop-color="#5a2a2c"/>
+    </linearGradient>
+    <linearGradient id="lava" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#ffb23e"/>
+      <stop offset="1" stop-color="#e2390d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffb450" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ff6a1f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <circle cx="256" cy="150" r="150" fill="url(#glow)"/>
+  <path d="M0 420 C90 410 150 350 196 250 L226 170 L286 170 L316 250 C362 350 422 410 512 420 L512 512 L0 512 Z" fill="#191419"/>
+  <path d="M0 448 C100 440 170 396 214 300 L232 250 L280 250 L298 300 C342 396 412 440 512 448 L512 512 L0 512 Z" fill="#241a1c"/>
+  <path d="M236 170 L276 170 L268 250 C262 300 274 330 266 372 L330 404 C350 430 330 462 256 462 C182 462 162 430 182 404 L246 372 C238 330 250 300 244 250 Z" fill="url(#lava)"/>
+  <path d="M226 170 Q256 150 286 170" fill="none" stroke="#ffe7a8" stroke-width="10" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>VolcanoMeter</title>
+    <meta
+      name="description"
+      content="A volcano that listens. The magma climbs as the conversation heats up, and erupts when it boils over."
+    />
+    <meta name="theme-color" content="#06070d" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="VolcanoMeter" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-180.png" />
+  </head>
+  <body>
+    <canvas
+      id="scene"
+      role="img"
+      aria-label="Cross-section of a volcano. Magma rises through it as the conversation gets louder."
+    ></canvas>
+
+    <header class="top chrome" id="top">
+      <div class="brand">Volcano<span>Meter</span></div>
+      <div class="top-actions">
+        <div class="mic-pill" id="micPill" data-state="off">
+          <i aria-hidden="true"></i><span id="micText">Microphone off</span>
+        </div>
+        <button id="settingsBtn" class="icon-btn" aria-label="Settings" aria-expanded="false" aria-controls="drawer">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              d="M4 7h9m4 0h3M4 12h3m4 0h9M4 17h11m4 0h1"
+            />
+            <circle cx="15" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <circle cx="9" cy="12" r="2" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <circle cx="17" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.6" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="status" id="status" data-phase="dormant" hidden>
+      <div class="status-label" id="phaseLabel" aria-live="polite">Calm</div>
+      <div class="gauge" role="meter" aria-label="Heat" aria-valuemin="0" aria-valuemax="100" id="gauge">
+        <div class="gauge-fill" id="gaugeFill"></div>
+      </div>
+    </section>
+
+    <main class="intro" id="intro">
+      <div class="intro-inner">
+        <h1>Volcano<span>Meter</span></h1>
+        <p class="lede">
+          A volcano that listens. Talk calmly and it sleeps. Raise your voices and the magma climbs. Lose your tempers
+          and it erupts.
+        </p>
+        <div class="intro-actions">
+          <button id="startBtn" class="primary">Start listening</button>
+          <button id="demoBtn" class="ghost">Try it without a microphone</button>
+        </div>
+        <p class="error" id="introError" role="alert" hidden></p>
+        <p class="fine">Sound is analysed on this device only. Nothing is recorded, stored or sent anywhere.</p>
+      </div>
+    </main>
+
+    <aside class="drawer" id="drawer" aria-label="Settings" hidden>
+      <div class="drawer-head">
+        <h2>Settings</h2>
+        <button id="closeDrawer" class="icon-btn" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="field" id="manualField" hidden>
+        <label for="manual">Heat, by hand <output id="manualOut">0</output></label>
+        <input id="manual" type="range" min="0" max="100" value="0" />
+        <p class="hint">Drag to see the volcano respond. Hold it at the top to make it erupt.</p>
+      </div>
+
+      <div class="field">
+        <label for="sensitivity">Sensitivity <output id="sensitivityOut">50</output></label>
+        <input id="sensitivity" type="range" min="0" max="100" value="50" />
+        <p class="hint">Higher reacts to mildly raised voices. Lower needs real shouting.</p>
+      </div>
+
+      <div class="field">
+        <div class="row">
+          <div>
+            <div class="label">Room level</div>
+            <p class="hint" id="roomHint">Start listening to measure the room.</p>
+          </div>
+          <button id="recalibrate" class="small">Relearn</button>
+        </div>
+        <div class="level" aria-hidden="true"><div id="levelFill"></div></div>
+      </div>
+
+      <div class="field">
+        <label class="switch" for="lowPower">
+          <span>
+            <span class="label">Low power</span>
+            <span class="hint">Lower resolution and fewer sparks, for older devices.</span>
+          </span>
+          <input id="lowPower" type="checkbox" />
+          <i aria-hidden="true"></i>
+        </label>
+      </div>
+
+      <div class="field buttons">
+        <button id="micToggle" class="small wide">Start listening</button>
+        <button id="fullscreen" class="small wide">Full screen</button>
+      </div>
+
+      <p class="fine">Sound is analysed on this device only. Nothing is recorded, stored or sent anywhere.</p>
+    </aside>
+
+    <div class="fatal" id="fatal" role="alert" hidden></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
