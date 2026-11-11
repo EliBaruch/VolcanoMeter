@@ -164,7 +164,6 @@ function boot(): void {
   let audioClock = 0;
   let hudClock = 0;
   let audioLevel = 0;
-  let skip = false;
   let frames = 0;
 
   const frame = (now: number): void => {
@@ -172,14 +171,12 @@ function boot(): void {
     const interval = now - last;
     const resting = volcano.phase === 'dormant' && volcano.erupt === 0 && !lava.active && particles.count === 0;
 
-    // at rest, half the frame rate is plenty and halves the power draw
-    if (resting && mode !== 'intro') {
-      skip = !skip;
-      if (skip && interval < 28) return;
-    }
+    // cap at about 60 fps on fast displays, and 30 fps while the volcano is at rest
+    const throttled = resting && mode !== 'intro';
+    if (interval < (throttled ? 30 : 13)) return;
     last = now;
     const dt = Math.min(0.1, Math.max(0.001, interval / 1000));
-    renderer.reportFrame(interval, now, resting);
+    renderer.reportFrame(interval, now, throttled);
     frames++;
 
     // ---- listen ----------------------------------------------------------------

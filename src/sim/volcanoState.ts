@@ -89,8 +89,8 @@ export class Volcano {
     // ---- phase label ----------------------------------------------------------------
     if (this.erupting) this.phase = 'erupting';
     else if (this.erupt > 0.05 || this.cooling > 0) this.phase = 'cooling';
-    else if (this.level >= 0.72) this.phase = 'critical';
-    else if (this.level >= 0.36) this.phase = 'rising';
+    else if (this.level >= 0.76) this.phase = 'critical';
+    else if (this.level >= 0.42) this.phase = 'rising';
     else if (this.level >= 0.08) this.phase = 'stirring';
     else this.phase = 'dormant';
   }
