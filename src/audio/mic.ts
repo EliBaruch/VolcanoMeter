@@ -11,10 +11,23 @@ export class Mic {
   private time: Float32Array<ArrayBuffer> = new Float32Array(0);
   private freq: Float32Array<ArrayBuffer> = new Float32Array(0);
   private restarting = false;
+  private echo = false;
   onLost: (() => void) | null = null;
+  /** called whenever the stream has been (re)opened */
+  onOpen: (() => void) | null = null;
 
   get running(): boolean {
     return !!this.analyser && this.ctx?.state === 'running';
+  }
+
+  /**
+   * While the app plays its own sound, the browser subtracts that sound from
+   * the microphone signal so the volcano does not react to itself.
+   */
+  async setEchoCancellation(on: boolean): Promise<void> {
+    if (on === this.echo) return;
+    this.echo = on;
+    if (this.stream) await this.recover();
   }
 
   async start(): Promise<void> {
@@ -22,10 +35,10 @@ export class Mic {
       throw new Error('This browser cannot open a microphone here. The page must be served over https.');
     }
     this.stop();
-    // Processing off on purpose: auto gain would flatten a shout to normal volume.
+    // Gain and noise processing off on purpose: auto gain would flatten a shout to normal volume.
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: false,
+        echoCancellation: this.echo,
         noiseSuppression: false,
         autoGainControl: false,
         channelCount: 1,
@@ -47,11 +60,12 @@ export class Mic {
     this.freq = new Float32Array(analyser.frequencyBinCount);
     if (this.ctx.state !== 'running') await this.ctx.resume();
 
+    this.onOpen?.();
     const track = this.stream.getAudioTracks()[0];
     track?.addEventListener('ended', () => void this.recover());
   }
 
-  /** The device was unplugged or the OS took the mic away: try once to reopen. */
+  /** Reopen the microphone: after a settings change, an unplug, or the OS taking it away. */
   private async recover(): Promise<void> {
     if (this.restarting) return;
     this.restarting = true;

@@ -31,6 +31,33 @@
         <div class="mic-pill" id="micPill" data-state="off">
           <i aria-hidden="true"></i><span id="micText">Microphone off</span>
         </div>
+        <button id="soundBtn" class="icon-btn sound-btn" aria-label="Mute sound" aria-pressed="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linejoin="round"
+              d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4z"
+            />
+            <path
+              class="waves"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              d="M15.5 9a4.2 4.2 0 010 6M18 6.5a7.8 7.8 0 010 11"
+            />
+            <path
+              class="cross"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              d="M15.5 9.5l5 5m0-5l-5 5"
+            />
+          </svg>
+        </button>
         <button id="settingsBtn" class="icon-btn" aria-label="Settings" aria-expanded="false" aria-controls="drawer">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
             <path
@@ -91,6 +118,12 @@
         <label for="sensitivity">Sensitivity <output id="sensitivityOut">50</output></label>
         <input id="sensitivity" type="range" min="0" max="100" value="50" />
         <p class="hint">Higher reacts to mildly raised voices. Lower needs real shouting.</p>
+      </div>
+
+      <div class="field">
+        <label for="volume">Sound <output id="volumeOut">70</output></label>
+        <input id="volume" type="range" min="0" max="100" value="70" />
+        <p class="hint">Rumble, bubbling and the eruption. Generated live, never recorded.</p>
       </div>
 
       <div class="field">

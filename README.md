@@ -48,6 +48,18 @@ URL options: `?demo` starts in manual mode, `?demo=0.6` starts at a fixed heat, 
 
 These feed a slow integrator: one loud word nudges it, sustained raised voices drive it up, and it cools when people calm down. Automatic gain control is switched off on the microphone, because it would flatten a shout to normal volume.
 
+## Sound
+
+The volcano's sound is generated live with Web Audio (`src/audio/sound.ts`); there are no recordings. A deep rumble and churning grow with the heat, gas bubbles pop at the magma surface, gas hisses as the column nears the crater, and an eruption brings a blast, a roar, crackle, the thud of landing lava bombs and thunder. One-off sounds are triggered by the same random events as the picture.
+
+The speaker button in the top bar mutes it, and the volume slider is in settings. Browsers only allow sound after a tap, so it starts with the first button press.
+
+Because the app listens while it plays, three things stop the volcano reacting to itself:
+
+- The microphone runs the browser's echo cancellation while sound is on (automatic gain stays off).
+- Everything that plays before an eruption sits below the speech band, which the heat model ignores.
+- An eruption has a fixed maximum length, so even on a device with no echo cancellation the roar cannot keep it going forever.
+
 ## How it is drawn
 
 Raw WebGL2, no runtime dependencies.
@@ -63,9 +75,9 @@ Performance: render resolution adapts to the device, the frame rate halves while
 ## Layout
 
 ```
-src/audio/    microphone and the heat model
+src/audio/    microphone, the heat model and the sound engine
 src/sim/      volcano state machine, random events, shared geometry
 src/render/   renderer, particles, lava flow, shaders
 src/ui/       start screen, status gauge, settings
-tests/        unit tests for the heat model and the state machine
+tests/        unit tests for the heat model, the state machine and the sound mix
 ```

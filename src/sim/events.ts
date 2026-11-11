@@ -29,6 +29,14 @@ interface Burst {
   live: boolean;
 }
 
+/** Receives the one-off events, so sound can follow the picture. */
+export interface EffectListener {
+  bubble(x: number, radius: number, heat: number): void;
+  tremor(strength: number): void;
+  eruption(): void;
+  lightning(x: number, strength: number): void;
+}
+
 export interface EffectOptions {
   /** 0..1, scales screen shake (reduced-motion users get less) */
   shakeScale: number;
@@ -57,6 +65,7 @@ export class Effects {
   private maxPlumeH = 2.2;
   private maxFountH = 0.6;
   opts: EffectOptions;
+  listener: EffectListener | null = null;
 
   constructor(opts: EffectOptions) {
     this.opts = opts;
@@ -165,6 +174,7 @@ export class Effects {
         if (u >= 1) {
           b.live = false;
           this.pop(b, surfY, heat, particles);
+          this.listener?.bubble(b.x, b.r, heat);
           v.kick(-0.01 * heat);
         } else {
           h = b.h * u * u * (1.15 - 0.15 * u);
@@ -216,10 +226,15 @@ export class Effects {
 
     // ---- tremors and shake --------------------------------------------------------------------------------
     if (rng.chance(0.015 + 0.55 * heat * heat * heat, dt)) {
-      this.tremor = Math.max(this.tremor, rng.range(0.0012, 0.0045) * (0.4 + heat));
+      const kick = rng.range(0.0012, 0.0045) * (0.4 + heat);
+      this.tremor = Math.max(this.tremor, kick);
       v.kick(rng.range(-0.03, 0.06) * heat);
+      this.listener?.tremor(kick / 0.0063);
     }
-    if (v.justBegan) this.tremor = 0.012;
+    if (v.justBegan) {
+      this.tremor = 0.012;
+      this.listener?.eruption();
+    }
     this.tremor *= Math.exp(-dt / 0.55);
     const rumble = 0.0009 * smoothstep(0.75, 1, heat) + 0.0042 * s.erupt;
     const amp = (this.tremor + rumble) * this.opts.shakeScale;
@@ -235,6 +250,7 @@ export class Effects {
       this.flashQueue.push(t);
       if (rng.next() < 0.65) this.flashQueue.push(t + rng.range(0.06, 0.16));
       if (rng.next() < 0.3) this.flashQueue.push(t + rng.range(0.2, 0.34));
+      this.listener?.lightning(s.flashX, rng.range(0.45, 1));
     }
     while (this.flashQueue.length && this.flashQueue[0] <= t) {
       this.flashQueue.shift();

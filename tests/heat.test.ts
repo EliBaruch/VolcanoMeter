@@ -92,6 +92,27 @@ describe('HeatModel', () => {
     expect(heatAt(0.5)).toBeGreaterThanOrEqual(heatAt(0.1));
   });
 
+  it('is not fooled by dropouts of digital silence', () => {
+    const m = new HeatModel();
+    const silence: AudioFeatures = { levelDb: -Infinity, speechRatio: 0, tiltDb: -20 };
+    run(m, 5, quiet);
+    // a few dead frames, as a stream delivers when it is reopened
+    for (let i = 0; i < 6; i++) m.update(silence, DT);
+    run(m, 10, quiet);
+    expect(m.floorDb).toBeGreaterThan(-70);
+    expect(run(m, 90, calmTalk)).toBeLessThan(0.2);
+  });
+
+  it('ignores input while a reopened stream settles', () => {
+    const m = new HeatModel();
+    run(m, 5, quiet);
+    run(m, 30, calmTalk);
+    const before = m.heat;
+    m.settle(1);
+    run(m, 0.9, () => ({ levelDb: -1, speechRatio: 0.9, tiltDb: 0 }));
+    expect(m.heat).toBe(before);
+  });
+
   it('never leaves [0, 1] and survives bad input', () => {
     const m = new HeatModel();
     for (let i = 0; i < 2000; i++) {

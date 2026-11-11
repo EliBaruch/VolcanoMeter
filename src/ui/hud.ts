@@ -12,18 +12,22 @@ const LABELS: Record<Phase, string> = {
 export interface Settings {
   sensitivity: number; // 0..1
   lowPower: boolean;
+  sound: boolean;
+  volume: number; // 0..1
 }
 
 const STORE_KEY = 'volcanometer.settings.v1';
 
 export function loadSettings(): Settings {
-  const s: Settings = { sensitivity: 0.5, lowPower: false };
+  const s: Settings = { sensitivity: 0.5, lowPower: false, sound: true, volume: 0.7 };
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const o = JSON.parse(raw) as Partial<Settings>;
       if (typeof o.sensitivity === 'number' && o.sensitivity >= 0 && o.sensitivity <= 1) s.sensitivity = o.sensitivity;
       if (typeof o.lowPower === 'boolean') s.lowPower = o.lowPower;
+      if (typeof o.sound === 'boolean') s.sound = o.sound;
+      if (typeof o.volume === 'number' && o.volume >= 0 && o.volume <= 1) s.volume = o.volume;
     }
   } catch {
     /* private mode or corrupt value: defaults are fine */
@@ -54,6 +58,8 @@ export interface HudHandlers {
   onRecalibrate(): void;
   onSensitivity(v: number): void;
   onLowPower(on: boolean): void;
+  onSound(on: boolean): void;
+  onVolume(v: number): void;
   onManual(v: number): void;
 }
 
@@ -99,6 +105,33 @@ export class Hud {
       settings.lowPower = low.checked;
       saveSettings(settings);
       h.onLowPower(low.checked);
+    });
+
+    const soundBtn = el<HTMLButtonElement>('soundBtn');
+    const volume = el<HTMLInputElement>('volume');
+    const volumeOut = el('volumeOut');
+    const showSound = (): void => {
+      soundBtn.setAttribute('aria-pressed', String(settings.sound));
+      soundBtn.setAttribute('aria-label', settings.sound ? 'Mute sound' : 'Turn sound on');
+      soundBtn.title = settings.sound ? 'Mute sound' : 'Turn sound on';
+      volumeOut.textContent = settings.sound ? volume.value : 'Off';
+    };
+    volume.value = String(Math.round(settings.volume * 100));
+    showSound();
+    soundBtn.addEventListener('click', () => {
+      settings.sound = !settings.sound;
+      saveSettings(settings);
+      showSound();
+      h.onSound(settings.sound);
+    });
+    volume.addEventListener('input', () => {
+      settings.volume = Number(volume.value) / 100;
+      const wasOff = !settings.sound;
+      settings.sound = settings.volume > 0;
+      saveSettings(settings);
+      showSound();
+      if (wasOff !== !settings.sound) h.onSound(settings.sound);
+      h.onVolume(settings.volume);
     });
 
     this.manual.addEventListener('input', () => {

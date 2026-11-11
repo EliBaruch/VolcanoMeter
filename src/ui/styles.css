@@ -164,6 +164,19 @@ input:focus-visible {
   background: rgba(24, 22, 28, 0.7);
 }
 
+.sound-btn .cross,
+.sound-btn[aria-pressed='false'] .waves {
+  display: none;
+}
+
+.sound-btn[aria-pressed='false'] .cross {
+  display: inline;
+}
+
+.sound-btn[aria-pressed='false'] {
+  color: var(--ink-faint);
+}
+
 /* chrome fades away when nobody is touching the screen */
 .chrome {
   transition: opacity 0.6s ease;

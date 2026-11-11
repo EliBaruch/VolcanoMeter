@@ -32,11 +32,16 @@ export class HeatModel {
   /** loudness above the room baseline, dB (for the UI meter) */
   aboveDb = 0;
 
-  private floorDb = -60;
+  /** learned level of the quiet room, dBFS */
+  floorDb = -60;
   private floorReady = false;
   private segMin: number[] = [];
-  private curMin = 0;
+  /** levels seen in the current segment, 1 dB bins from -100 dBFS */
+  private hist = new Uint16Array(101);
+  private histCount = 0;
   private segTime = 0;
+  /** seconds of input still to discard (stream start-up) */
+  private settling = 0.6;
   private speechRef = 22;
   private tiltRef = -14;
   private activeTime = 0;
@@ -49,6 +54,9 @@ export class HeatModel {
     this.floorReady = false;
     this.segMin = [];
     this.segTime = 0;
+    this.hist.fill(0);
+    this.histCount = 0;
+    this.settling = 0.6;
     this.speechRef = 22;
     this.tiltRef = -14;
     this.activeTime = 0;
@@ -57,6 +65,25 @@ export class HeatModel {
     this.accum = 0;
     this.heat = 0;
     this.drive = 0;
+  }
+
+  /**
+   * Discard the next moments of input. A microphone that has just been
+   * (re)opened delivers a burst of digital silence or a click before real sound.
+   */
+  settle(seconds = 0.6): void {
+    this.settling = Math.max(this.settling, seconds);
+  }
+
+  /** The level that 10% of the current segment's frames fall below. */
+  private lowLevel(): number {
+    const want = this.histCount * 0.1;
+    let seen = 0;
+    for (let i = 0; i <= 100; i++) {
+      seen += this.hist[i];
+      if (seen > want) return i - 100;
+    }
+    return 0;
   }
 
   /** The eruption vents pressure: called once when an eruption ends. */
@@ -70,22 +97,32 @@ export class HeatModel {
     dt = Math.min(dt, 0.25);
     const level = clamp(f.levelDb, -100, 0);
 
-    // ---- room baseline: the quietest moment of the last 30 s ----------------
+    if (this.settling > 0) {
+      this.settling -= dt;
+      return this.heat;
+    }
+
+    // ---- room baseline: the quiet moments of the last 30 s --------------------
+    // A low percentile rather than the minimum, so a few frames of digital
+    // silence or a dropout cannot drag the baseline down.
+    this.hist[Math.round(level + 100)]++;
+    this.histCount++;
+    if (this.histCount < 8 && this.segMin.length === 0) return this.heat;
+    const low = this.lowLevel();
     if (!this.floorReady) {
-      this.floorDb = level;
-      this.curMin = level;
+      this.floorDb = low;
       this.floorReady = true;
     }
-    this.curMin = Math.min(this.curMin, level);
     this.segTime += dt;
+    let floorTarget = this.histCount >= 8 ? low : 0;
+    for (const m of this.segMin) floorTarget = Math.min(floorTarget, m);
     if (this.segTime >= SEGMENT_SECONDS) {
-      this.segMin.push(this.curMin);
+      this.segMin.push(low);
       if (this.segMin.length > SEGMENTS) this.segMin.shift();
-      this.curMin = level;
+      this.hist.fill(0);
+      this.histCount = 0;
       this.segTime = 0;
     }
-    let floorTarget = this.curMin;
-    for (const m of this.segMin) floorTarget = Math.min(floorTarget, m);
     floorTarget = clamp(floorTarget, -90, -30);
     // fall quickly, rise slowly
     const fk = floorTarget < this.floorDb ? 1 - Math.exp(-dt / 0.15) : 1 - Math.exp(-dt / 4);

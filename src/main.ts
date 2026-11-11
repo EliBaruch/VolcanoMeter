@@ -1,6 +1,7 @@
 import './ui/styles.css';
 import { HeatModel } from './audio/heat';
 import { Mic } from './audio/mic';
+import { VolcanoSound } from './audio/sound';
 import { LavaFlow } from './render/lavaFlow';
 import { Particles } from './render/particles';
 import { Renderer } from './render/renderer';
@@ -58,9 +59,21 @@ function boot(): void {
   const heatModel = new HeatModel();
   heatModel.sensitivity = settings.sensitivity;
   const mic = new Mic();
+  const sound = new VolcanoSound({ enabled: settings.sound, volume: settings.volume, lowPower: settings.lowPower });
+  void mic.setEchoCancellation(settings.sound);
   const particles = new Particles();
   const lava = new LavaFlow();
   const effects = new Effects({ shakeScale: reducedMotion.matches ? 0 : 1, lowPower: settings.lowPower });
+  effects.listener = {
+    bubble: (x, r, h) => sound.bubble(x, r, h),
+    tremor: (a) => sound.tremor(a),
+    eruption: () => sound.blast(),
+    lightning: (x, a) => sound.thunder(x, a),
+  };
+  // browsers only allow sound after a tap or key press; the first one anywhere starts it
+  const unlock = (): void => sound.start();
+  window.addEventListener('pointerdown', unlock, { passive: true });
+  window.addEventListener('keydown', unlock, { passive: true });
   reducedMotion.addEventListener('change', () => {
     effects.opts.shakeScale = reducedMotion.matches ? 0 : 1;
   });
@@ -116,8 +129,15 @@ function boot(): void {
     onSensitivity: (v) => {
       heatModel.sensitivity = v;
     },
+    onSound: (on) => {
+      sound.setEnabled(on);
+      // reopening the microphone keeps what was learned about the room
+      void mic.setEchoCancellation(on).catch(() => undefined);
+    },
+    onVolume: (v) => sound.setVolume(v),
     onLowPower: (on) => {
       effects.opts.lowPower = on;
+      sound.setLowPower(on);
       renderer.setLowPower(on);
       renderer.resize(true);
     },
@@ -126,6 +146,8 @@ function boot(): void {
     },
   });
 
+  // a freshly opened stream starts with silence or a click: do not learn from it
+  mic.onOpen = () => heatModel.settle();
   mic.onLost = () => {
     hud.setMic('error', 'The microphone disconnected');
   };
@@ -138,6 +160,7 @@ function boot(): void {
   }
 
   document.addEventListener('visibilitychange', () => {
+    sound.setHidden(document.visibilityState !== 'visible');
     if (document.visibilityState === 'visible') {
       void mic.resume();
       void keepAwake();
@@ -202,7 +225,11 @@ function boot(): void {
     if (volcano.justEnded && mode === 'mic') heatModel.release();
     effects.update(volcano, heat, audioLevel, dt, particles, lava);
     const s = effects.state;
-    particles.update(dt, s.time, s.levelY, s.wind, (x, size) => lava.addSpatter(x, size));
+    particles.update(dt, s.time, s.levelY, s.wind, (x, size) => {
+      lava.addSpatter(x, size);
+      sound.thud(x, size);
+    });
+    sound.update({ heat: s.heat, level: volcano.level, erupt: s.erupt, wind: s.wind }, dt);
 
     // ---- draw ----------------------------------------------------------------------
     renderer.render(s, particles, lava);
@@ -223,12 +250,17 @@ function boot(): void {
       manualHeat = Math.min(1, Math.max(0, v));
       hud.setManual(manualHeat);
     },
+    async probeSound(heat: number, level: number, erupt: number, seconds?: number, micGain?: number, small?: boolean) {
+      const m = await import('./audio/soundProbe');
+      return m.probeSound({ heat, level, erupt, wind: 0.4 }, seconds, true, micGain, small);
+    },
     get state() {
       return {
         mode,
         heat: mode === 'mic' ? heatModel.heat : manualHeat,
         drive: heatModel.drive,
         aboveDb: heatModel.aboveDb,
+        floorDb: heatModel.floorDb,
         level: volcano.level,
         phase: volcano.phase,
         erupt: volcano.erupt,
@@ -236,6 +268,7 @@ function boot(): void {
         plume: effects.state.plume,
         plumeH: effects.state.plumeH,
         scale: renderer.scale,
+        sound: sound.running,
         frames,
       };
     },
